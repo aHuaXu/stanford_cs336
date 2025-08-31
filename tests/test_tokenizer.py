@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import os
-import resource
+# import resource
 import sys
 
 import psutil
@@ -81,7 +81,9 @@ def test_roundtrip_empty():
     )
     test_string = ""
     encoded_ids = tokenizer.encode(test_string)
+    print(encoded_ids)
     decoded_string = tokenizer.decode(encoded_ids)
+    print(decoded_string)
     assert test_string == decoded_string
 
 

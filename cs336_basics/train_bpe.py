@@ -1,8 +1,9 @@
+import multiprocessing
 import os
 import regex as re
 from multiprocessing import Pool
 from typing import Generator, Tuple, List, Pattern, Union
-from cs336_basics.pretokenization_example import find_chunk_boundaries
+from cs336_basics.pretokenization_example import find_chunk_boundaries, get_expected_chunk_num
 
 PAT = re.compile(
     r"""'(?:[sdmt]|ll|ve|re)| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+"""
@@ -24,38 +25,59 @@ def word2bytes(word: str) -> tuple[bytes, ...]:
 
 def chunk_generator(
     input_path: str | os.PathLike,
-    num_processes: int,
-    special_tokens: List[str],
+    chunk_num: int,
+    special_tokens: List[str] | None = None,
+    split_consider_memory: bool = False,  # if True split file into expected chunk size
 ) -> Generator[tuple[str, List[str]], None, None]:
     with open(input_path, "rb") as f:
-        boundaries = find_chunk_boundaries(f, num_processes, b"<|endoftext|>")
+        if split_consider_memory:
+            chunk_num = get_expected_chunk_num(f)
+        boundaries = find_chunk_boundaries(f, chunk_num, b"<|endoftext|>")
         for start, end in zip(boundaries[:-1], boundaries[1:]):
             f.seek(start)
             chunk = f.read(end - start).decode("utf-8", errors="ignore")
             chunk = chunk.replace("\r\n", "\n")  # 兼容windows
             yield chunk, special_tokens
 
+def default_chunk_generator(
+    input_path: str | os.PathLike,
+    chunk_num: int,
+    split_consider_memory: bool = False, # if True split file into expected chunk size
+) -> Generator[str, None, None]:
+    for chunk, _ in chunk_generator(input_path, chunk_num, split_consider_memory=split_consider_memory):
+        yield chunk
 
-def process_chunk(
+def token_from_chunk_generator(
     chunk: str,
     special_tokens: List[str],
-) -> dict[tuple[bytes, ...], int]:
+    drop_special: bool = True,
+) -> Generator[str, None, None]:
+    # set default separator token
+
     separator = "|".join([re.escape(token) for token in special_tokens])
+    if not drop_special:
+        separator = f"({separator})"
     separator_pat = re.compile(separator)
 
-    pre_token_counts: dict[tuple[bytes, ...], int] = {}
-    # remove special tokens
     sub_chunks = separator_pat.split(chunk)
-    # Run pre-tokenization on your chunk and store the counts for each pre-token
     for sub_chunk in sub_chunks:
         for match in PAT.finditer(sub_chunk):
             token = match.group()
-            token_tuple = word2bytes(token)
-            if len(token_tuple) < 2:
-                continue
-            pre_token_counts[token_tuple] = pre_token_counts.get(token_tuple, 0) + 1
-    return pre_token_counts
+            yield token
 
+def count_one_chunk(
+    chunk: str,
+    special_tokens: List[str],
+    drop_special: bool = True,
+) -> dict[tuple[bytes, ...], int]:
+    pre_token_counts: dict[tuple[bytes, ...], int] = {}
+    # Run pre-tokenization on your chunk and store the counts for each pre-token
+    for token in token_from_chunk_generator(chunk, special_tokens, drop_special):
+        token_tuple = word2bytes(token)
+        if len(token_tuple) < 2:
+            continue
+        pre_token_counts[token_tuple] = pre_token_counts.get(token_tuple, 0) + 1
+    return pre_token_counts
 
 def train_bpe(
     input_path: str | os.PathLike,
@@ -98,8 +120,8 @@ def train_bpe(
     num_processes = 2   # test_train_bpe_speed will fail in windows if it's set with 4 ...
     with Pool(processes=num_processes) as pool:
         results = pool.starmap(
-            process_chunk,
-            chunk_generator(input_path, num_processes, special_tokens)
+            count_one_chunk,
+            chunk_generator(input_path, 4, special_tokens)
         )
         for one_chunk_count in results:
             for token, count in one_chunk_count.items():
@@ -162,3 +184,5 @@ def train_bpe(
             del pre_token_counts[pre_token]
 
     return vocab, merges
+
+# ToDo: assignment1 #L10
