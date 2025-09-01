@@ -3,7 +3,10 @@ import os
 import regex as re
 from multiprocessing import Pool
 from typing import Generator, Tuple, List, Pattern, Union
-from cs336_basics.pretokenization_example import find_chunk_boundaries, get_expected_chunk_num
+from cs336_basics.pretokenization_example import (
+    find_chunk_boundaries,
+    get_expected_chunk_num,
+)
 
 PAT = re.compile(
     r"""'(?:[sdmt]|ll|ve|re)| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+"""
@@ -42,9 +45,11 @@ def chunk_generator(
 def default_chunk_generator(
     input_path: str | os.PathLike,
     chunk_num: int,
-    split_consider_memory: bool = False, # if True split file into expected chunk size
+    split_consider_memory: bool = False,  # if True split file into expected chunk size
 ) -> Generator[str, None, None]:
-    for chunk, _ in chunk_generator(input_path, chunk_num, split_consider_memory=split_consider_memory):
+    for chunk, _ in chunk_generator(
+        input_path, chunk_num, split_consider_memory=split_consider_memory
+    ):
         yield chunk
 
 def token_from_chunk_generator(
@@ -53,7 +58,7 @@ def token_from_chunk_generator(
     drop_special: bool = True,
 ) -> Generator[str, None, None]:
     # set default separator token
-
+    special_tokens = sorted(special_tokens, key=len, reverse=True)
     separator = "|".join([re.escape(token) for token in special_tokens])
     if not drop_special:
         separator = f"({separator})"
@@ -61,9 +66,12 @@ def token_from_chunk_generator(
 
     sub_chunks = separator_pat.split(chunk)
     for sub_chunk in sub_chunks:
-        for match in PAT.finditer(sub_chunk):
-            token = match.group()
-            yield token
+        if not drop_special and sub_chunk in special_tokens:
+            yield sub_chunk
+        else:
+            for match in PAT.finditer(sub_chunk):
+                token = match.group()
+                yield token
 
 def count_one_chunk(
     chunk: str,
@@ -120,8 +128,7 @@ def train_bpe(
     num_processes = 2   # test_train_bpe_speed will fail in windows if it's set with 4 ...
     with Pool(processes=num_processes) as pool:
         results = pool.starmap(
-            count_one_chunk,
-            chunk_generator(input_path, 4, special_tokens)
+            count_one_chunk, chunk_generator(input_path, 4, special_tokens)
         )
         for one_chunk_count in results:
             for token, count in one_chunk_count.items():
@@ -184,5 +191,6 @@ def train_bpe(
             del pre_token_counts[pre_token]
 
     return vocab, merges
+
 
 # ToDo: assignment1 #L10

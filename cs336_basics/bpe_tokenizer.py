@@ -1,11 +1,14 @@
 from multiprocessing import Pool
 from typing import Iterable, Iterator
-from cs336_basics.train_bpe import default_chunk_generator, token_from_chunk_generator, word2bytes
+from cs336_basics.train_bpe import (
+    default_chunk_generator,
+    token_from_chunk_generator,
+    word2bytes,
+)
 
 
 def merge_tuple_pair(
-    original: tuple[bytes, ...],
-    target: tuple[bytes, bytes]
+    original: tuple[bytes, ...], target: tuple[bytes, bytes]
 ) -> tuple[bytes, ...]:
     """
     Replace all occurrences of the target (bytes, bytes) subtuple in the original tuple
@@ -24,7 +27,10 @@ def merge_tuple_pair(
     i = 0
 
     while i < len(original_list):
-        if i + 1 < len(original_list) and (original_list[i], original_list[i + 1]) == target:
+        if (
+            i + 1 < len(original_list)
+            and (original_list[i], original_list[i + 1]) == target
+        ):
             result.append(merged)
             i += 2
         else:
@@ -47,7 +53,9 @@ class BpeTokenizer:
         if not special_tokens:
             special_tokens = ["<|endoftext|>"]
         self.special_tokens = special_tokens
-        self.byte_to_id: dict[bytes, int] = {v: k for k, v in self.vocab.items()} # reserve vocab map
+        self.byte_to_id: dict[bytes, int] = {
+            v: k for k, v in self.vocab.items()
+        }  # reserve vocab map
 
         self.supplement_special_tokens(special_tokens)
 
@@ -70,11 +78,10 @@ class BpeTokenizer:
             return
         for stoken in special_tokens:
             token = stoken.encode("utf-8")
-            if token not in self.byte_to_id:
-                continue
-            num = len(self.vocab)
-            self.vocab[num] = token
-            self.byte_to_id[token] = num
+            if token not in self.byte_to_id:  # 如果不在vocab中，添加它
+                num = len(self.vocab)
+                self.vocab[num] = token
+                self.byte_to_id[token] = num
 
     def tokens_to_ids(self, tokens: Iterable[bytes]) -> list[int]:
         return [self.byte_to_id[token] for token in tokens]
@@ -84,12 +91,14 @@ class BpeTokenizer:
         res: list[int] = []
         for pre_token in token_from_chunk_generator(text, self.special_tokens, False):
             if pre_token in self.special_tokens:
-                res.append(self.byte_to_id[pre_token])
+                # 特殊token需要转换为bytes
+                special_token_bytes = pre_token.encode("utf-8")
+                res.append(self.byte_to_id[special_token_bytes])
             else:
                 token_tuple = word2bytes(pre_token)
                 for merge_tuple in self.merges:
                     token_tuple = merge_tuple_pair(token_tuple, merge_tuple)
-                    res.extend(self.tokens_to_ids(token_tuple))
+                res.extend(self.tokens_to_ids(token_tuple))
         return res
 
     def encode_iterable(self, iterable: Iterable[str]) -> Iterator[int]:
@@ -103,5 +112,4 @@ class BpeTokenizer:
     def decode(self, ids: list[int]) -> str:
         """Decode a sequence of token IDs into text."""
         encoded = b"".join(self.vocab[token_id] for token_id in ids)
-        return encoded.decode("utf-8")
-
+        return encoded.decode('utf-8',errors='replace')
