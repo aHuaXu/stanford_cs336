@@ -11,6 +11,10 @@ from torch import Tensor
 
 from cs336_basics.train_bpe import train_bpe
 from cs336_basics.bpe_tokenizer import BpeTokenizer
+from cs336_basics.base_module import (
+    LinearLayer,
+    EmbeddingLayer
+)
 
 
 def run_linear(
@@ -32,7 +36,9 @@ def run_linear(
         Float[Tensor, "... d_out"]: The transformed output of your linear module.
     """
 
-    raise NotImplementedError
+    linear_layer = LinearLayer(d_in, d_out, device=weights.device, dtype=weights.dtype)
+    linear_layer.load_state_dict({"W": weights})
+    return linear_layer(in_features)
 
 
 def run_embedding(
@@ -54,7 +60,9 @@ def run_embedding(
         Float[Tensor, "... d_model"]: Batch of embeddings returned by your Embedding layer.
     """
 
-    raise NotImplementedError
+    embedding_layer = EmbeddingLayer(vocab_size, d_model, device=weights.device, dtype=weights.dtype)
+    embedding_layer.load_state_dict({"W": weights})
+    return embedding_layer(token_ids)
 
 
 def run_swiglu(
