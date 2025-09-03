@@ -13,7 +13,9 @@ from cs336_basics.train_bpe import train_bpe
 from cs336_basics.bpe_tokenizer import BpeTokenizer
 from cs336_basics.base_module import (
     LinearLayer,
-    EmbeddingLayer
+    EmbeddingLayer,
+    RMSNormLayer,
+    SwiGLU
 )
 
 
@@ -94,7 +96,14 @@ def run_swiglu(
     # swiglu.w1.weight.data = w1_weight
     # swiglu.w2.weight.data = w2_weight
     # swiglu.w3.weight.data = w3_weight
-    raise NotImplementedError
+    swiglu_layer = SwiGLU(d_model, d_ff, device=w1_weight.device, dtype=w1_weight.dtype)
+    state_dict = {
+        "linear1.W": w1_weight,
+        "linear3.W": w3_weight,
+        "linear2.W": w2_weight
+    }
+    swiglu_layer.load_state_dict(state_dict)
+    return swiglu_layer(in_features)
 
 
 def run_scaled_dot_product_attention(
@@ -389,7 +398,9 @@ def run_rmsnorm(
         Float[Tensor,"... d_model"]: Tensor of with the same shape as `in_features` with the output of running
         RMSNorm of the `in_features`.
     """
-    raise NotImplementedError
+    rmsnorm_layer = RMSNormLayer(d_model, eps, device=weights.device, dtype=weights.dtype)
+    rmsnorm_layer.load_state_dict({"g": weights})
+    return rmsnorm_layer(in_features)
 
 
 def run_silu(in_features: Float[Tensor, " ..."]) -> Float[Tensor, " ..."]:
