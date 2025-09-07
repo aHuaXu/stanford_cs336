@@ -118,3 +118,45 @@ class SwiGLU(nn.Module):
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         hidden = self.siLu(self.linear1(x)) * self.linear3(x)
         return self.linear2(hidden)
+
+
+class RotaryPositionalEmbedding(nn.Module):
+    def __init__(
+        self,
+        theta: float,   # Θ value for the RoPE
+        d_k: int,   # int dimension of query and key vectors
+        max_seq_len: int,   # Maximum sequence length that will be inputted
+        device: torch.device | None = None #  Device to store the buffer on
+    ):
+        super().__init__()
+        # (dk//2, ) md文档没括号
+        thetas = theta ** (- (2 * torch.arange(d_k//2, device=device)) / d_k)
+        # (max_seq_len, 1)
+        pos = torch.arange(max_seq_len, device=device).unsqueeze(1)
+        # (max_seq_len, dk//2)
+        pos_theta = pos * thetas # broadcast
+
+        self.register_buffer('rope_cos', torch.cos(pos_theta), persistent=False)
+        self.register_buffer('rope_sin', torch.sin(pos_theta), persistent=False)
+
+    # x.shape: (..., seq_len, d_k)
+    # token_positions shape: (..., seq_len)
+    def forward(self, x: torch.Tensor, token_positions: torch.Tensor) -> torch.Tensor:
+        *batch_dim, seq_len, d_k = x.shape
+
+        x_even, x_odd = x[..., ::2], x[..., 1::2]
+
+        # cos,sin shape: (..., seq_len, d_k//2)
+        cos, sin = self.rope_cos[token_positions], self.rope_sin[token_positions]
+
+        new_x_even, new_x_odd = cos * x_even - sin * x_odd, cos * x_odd + sin * x_even
+
+        y = torch.zeros_like(x)
+        y[..., ::2], y[..., 1::2] = new_x_even, new_x_odd
+        return y
+
+def softmax(x: torch.Tensor, dim: int = 0) -> torch.Tensor:
+    x = x - torch.max(x, dim=dim, keepdim=True).values
+    x_exp = torch.exp(x)
+    x_exp_sum = torch.sum(x_exp, dim=dim, keepdim=True)
+    return x_exp / x_exp_sum
