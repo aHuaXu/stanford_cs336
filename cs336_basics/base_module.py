@@ -1,6 +1,10 @@
+import math
+
 import torch.cuda
 from torch import nn
 from torch.nn.init import trunc_normal_
+from jaxtyping import Bool, Float, Int
+from torch import Tensor
 
 def init_params(x: torch.Tensor):
     trunc_normal_(
@@ -160,3 +164,23 @@ def softmax(x: torch.Tensor, dim: int = 0) -> torch.Tensor:
     x_exp = torch.exp(x)
     x_exp_sum = torch.sum(x_exp, dim=dim, keepdim=True)
     return x_exp / x_exp_sum
+
+def scaled_dot_product_attention(
+    q: Float[Tensor, " ... queries d_k"],
+    k: Float[Tensor, " ... keys d_k"],
+    v: Float[Tensor, " ... values d_v"],
+    mask: Bool[Tensor, " ... queries keys"] | None = None,
+) -> Float[Tensor, " ... queries d_v"]:
+    queries, d_k = q.shape[-2:]
+    keys, d_k = k.shape[-2:]
+    values, d_v = v.shape[-2:]
+    assert keys == values
+
+    # scores.shape: (..., queries, keys)
+    scores = torch.matmul(q, k.transpose(-1, -2))/math.sqrt(d_k)
+    if mask is not None:
+        scores[~mask] = -1e6
+    softmax_scores = softmax(scores, dim=-1)
+
+    return torch.matmul(softmax_scores, v)
+
