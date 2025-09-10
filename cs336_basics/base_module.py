@@ -184,17 +184,20 @@ def scaled_dot_product_attention(
 
     return torch.matmul(softmax_scores, v)
 
-# x.shape: (batch_size, seq_len, d_model=query_size*num_heads)
+# x.shape: (..., seq_len, d_model=query_size*num_heads)
 def transpose_qkv(x: torch.Tensor, num_heads: int) -> torch.Tensor:
-    x = x.reshape(x.shape[0], x.shape[1], num_heads, -1)
-    x.permute(0, 2, 1, 3)
-    # (batch_size*num_heads, seq_len, query_size)
-    return x.reshape(-1, x.shape[2], x.shape[3])
+    *batch_dim, seq_len, d_model = x.shape
+    assert d_model%num_heads == 0
+    x = x.reshape(*batch_dim, seq_len, num_heads, -1)
+    x = x.permute(*range(len(batch_dim)), -2, -3, -1)
+    # (..., num_heads, seq_len, query_size)
+    return x
 
+# x.shape: (..., num_heads, seq_len, query_size)
 def transpose_out(x: torch.Tensor, num_heads: int) -> torch.Tensor:
-    x = x.reshape(-1, num_heads, x.shape[1], x.shape[2])
-    x.permute(0, 2, 1, 3)
-    return x.reshape(x.shape[0], x.shape[1], -1)
+    *batch_dim, _, seq_len, _ = x.shape
+    x = x.permute(*range(len(batch_dim)), -2, -3, -1)
+    return x.reshape(*batch_dim, seq_len, -1)
 
 class MultiHeadAttention(nn.Module):
     def __init__(
@@ -203,8 +206,18 @@ class MultiHeadAttention(nn.Module):
         num_heads: int,
         device: torch.device | None = None,
         dtype: torch.dtype | None = None,
+
+        # the following params is not None if you need rope
+        theta: float | None = None,  # Θ value for the RoPE
+        max_seq_len: int | None = None,  # Maximum sequence length that will be inputted
     ):
         super().__init__()
+        assert d_model%num_heads == 0
+
+        self.rope_layer = None
+        if theta is not None:
+            assert max_seq_len is not None
+            self.rope_layer = RotaryPositionalEmbedding(theta, d_model//num_heads, max_seq_len, device=device)
         self.Wq = LinearLayer(d_model, d_model, device=device, dtype=dtype)
         self.Wk = LinearLayer(d_model, d_model, device=device, dtype=dtype)
         self.Wv = LinearLayer(d_model, d_model, device=device, dtype=dtype)
@@ -212,14 +225,22 @@ class MultiHeadAttention(nn.Module):
         self.num_heads = num_heads
         self.d_model = d_model
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+    def forward(self, x: torch.Tensor, token_positions: torch.Tensor | None = None) -> torch.Tensor:
         queries = transpose_qkv(self.Wq(x), self.num_heads)
         keys = transpose_qkv(self.Wk(x), self.num_heads)
         values = transpose_qkv(self.Wv(x), self.num_heads)
+        if self.rope_layer is not None:
+            queries = self.rope_layer(queries, token_positions)
+            keys = self.rope_layer(keys, token_positions)
+            # values = self.rope_layer(values, token_positions)
 
-        seq_len = queries.shape[1]
+        *batch_dim, _, seq_len, _ = queries.shape
+        # (seq_len, seq_len)
         mask = torch.arange(seq_len)[:, None] >= torch.arange(seq_len)
+        for _ in range(len(batch_dim)+1):
+            mask = mask.unsqueeze(0)
+        mask = mask.repeat(*batch_dim, self.num_heads, 1, 1)
 
-        # (batch_size*num_heads, seq_len, d_v)
+        # (..., num_heads, seq_len, d_v)
         out = scaled_dot_product_attention(queries, keys, values, mask)
         return self.Wo(transpose_out(out, self.num_heads))
