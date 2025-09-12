@@ -26,11 +26,14 @@ class TransformerBlock(nn.Module):
         :param d_ff: Dimensionality of the position-wise feed-forward inner layer
         """
         super().__init__()
-        self.norm = SwiGLU(d_model, d_ff, device, dtype)
-        self.multihead_attention = MultiHeadAttention(d_model, num_heads, device, dtype, theta, max_seq_len)
+        self.norm1 = RMSNormLayer(d_model, device=device, dtype=dtype)
+        self.norm2 = RMSNormLayer(d_model, device=device, dtype=dtype)
+        self.attn = MultiHeadAttention(d_model, num_heads, device, dtype, theta, max_seq_len)
         self.ffn = SwiGLU(d_model, d_ff, device, dtype)
 
     # x.shape: (batch_size, seq_len, d_model)
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        y = x + self.multihead_attention(self.norm(x))
-        return y + self.ffn(self.norm(y))
+        token_positions = torch.arange(x.shape[1], device=x.device).unsqueeze(0)
+        token_positions = token_positions.repeat(x.shape[0], 1)
+        y = x + self.attn(self.norm1(x), token_positions)
+        return y + self.ffn(self.norm2(y))
