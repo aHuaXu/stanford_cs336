@@ -21,7 +21,11 @@ from cs336_basics.base_module import (
     scaled_dot_product_attention,
     MultiHeadAttention
 )
-from cs336_basics.transformer import TransformerBlock
+from cs336_basics.transformer import (
+    TransformerBlock,
+    TransformerLM,
+)
+from torch.xpu import device
 
 
 def run_linear(
@@ -319,18 +323,7 @@ def run_transformer_block(
         running the Transformer block on the input features while using RoPE.
     """
     transformer_block_layer = TransformerBlock(d_model, num_heads, d_ff, device=in_features.device, dtype=in_features.dtype, theta=theta, max_seq_len=max_seq_len)
-    state_dict = {
-        "attn.Wq.W": weights["attn.q_proj.weight"],
-        "attn.Wk.W": weights["attn.k_proj.weight"],
-        "attn.Wv.W": weights["attn.v_proj.weight"],
-        "attn.Wo.W": weights["attn.output_proj.weight"],
-        "norm1.g": weights["ln1.weight"],
-        "norm2.g": weights["ln2.weight"],
-        "ffn.linear1.W": weights["ffn.w1.weight"],
-        "ffn.linear2.W": weights["ffn.w2.weight"],
-        "ffn.linear3.W": weights["ffn.w3.weight"],
-    }
-    transformer_block_layer.load_state_dict(state_dict)
+    transformer_block_layer.load_weights(weights)
     return transformer_block_layer(in_features)
 
 
@@ -413,7 +406,20 @@ def run_transformer_lm(
         Float[Tensor, "batch_size sequence_length vocab_size"]: Tensor with the predicted unnormalized
         next-word distribution for each token.
     """
-    raise NotImplementedError
+    transformer_lm = TransformerLM(
+        vocab_size=vocab_size,
+        context_length=context_length,
+        num_layers=num_layers,
+        d_model=d_model,
+        num_heads=num_heads,
+        d_ff=d_ff,
+        device=in_indices.device,
+        dtype=torch.float32,
+        rope_theta=rope_theta,
+    )
+    transformer_lm.load_weights(weights)
+    return transformer_lm.forward(in_indices)
+
 
 
 def run_rmsnorm(
