@@ -34,9 +34,10 @@ class LinearLayer(nn.Module):
         return x @ self.W.T
 
 def to_onehot(x: torch.Tensor, num_vocab: int) -> torch.Tensor:
-    batch_size, num_queries = x.shape
-    one_hot = torch.zeros(batch_size, num_queries, num_vocab, device=x.device, dtype=x.dtype)
-    one_hot.scatter_(2, x.unsqueeze(2), 1)
+    *batch_size, = x.shape
+    one_hot = torch.zeros(*batch_size, num_vocab, device=x.device, dtype=x.dtype)
+    new_dim = len(batch_size)
+    one_hot.scatter_(new_dim, x.unsqueeze(new_dim), 1)
     return one_hot
 
 class EmbeddingLayer(nn.Module):
