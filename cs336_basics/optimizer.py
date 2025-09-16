@@ -99,9 +99,58 @@ class AdamW(torch.optim.Optimizer):
                 state["t"] = t + 1
 
         return loss
-            
-    
-    
+
+def get_lr_cosine_schedule(
+    it: int,
+    max_learning_rate: float,
+    min_learning_rate: float,
+    warmup_iters: int,
+    cosine_cycle_iters: int,
+) -> float:
+    """
+    Given the parameters of a cosine learning rate decay schedule (with linear
+    warmup) and an iteration number, return the learning rate at the given
+    iteration under the specified schedule.
+
+    Args:
+        it (int): Iteration number to get learning rate for.
+        max_learning_rate (float): alpha_max, the maximum learning rate for
+            cosine learning rate schedule (with warmup).
+        min_learning_rate (float): alpha_min, the minimum / final learning rate for
+            the cosine learning rate schedule (with warmup).
+        warmup_iters (int): T_w, the number of iterations to linearly warm-up
+            the learning rate.
+        cosine_cycle_iters (int): T_c, the number of cosine annealing iterations.
+
+    Returns:
+        Learning rate at the given iteration under the specified schedule.
+    """
+
+    # 1. warn up
+    if it < warmup_iters:
+        return max_learning_rate * it / warmup_iters
+    elif it <= cosine_cycle_iters:
+        return min_learning_rate + (max_learning_rate - min_learning_rate) * (1 + math.cos((it - warmup_iters) * math.pi / (cosine_cycle_iters - warmup_iters)))/2
+    else:
+        return min_learning_rate
+
+def gradient_clipping(parameters: Iterable[torch.nn.Parameter], max_l2_norm: float) -> None:
+    """Given a set of parameters, clip their combined gradients to have l2 norm at most max_l2_norm.
+
+    Args:
+        parameters (Iterable[torch.nn.Parameter]): collection of trainable parameters.
+        max_l2_norm (float): a positive value containing the maximum l2-norm.
+
+    The gradients of the parameters (parameter.grad) should be modified in-place.
+    """
+    grads = [p.grad.data for p in parameters if p.grad is not None]
+
+    total_norm = torch.norm(torch.stack([torch.norm(g, p=2) for g in grads]), p=2)
+
+    if total_norm > max_l2_norm:
+        scale = max_l2_norm / (total_norm + 1e-6)
+        for g in grads:
+            g.mul_(scale)
 
 if __name__ == "__main__":
     weights = torch.nn.Parameter(5 * torch.randn((10, 10)))
