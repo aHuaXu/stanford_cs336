@@ -27,6 +27,7 @@ from cs336_basics.transformer import (
 )
 from cs336_basics.train_transformer import (
     cross_entropy_loss,
+    get_batch,
 )
 from cs336_basics.optimizer import (
     AdamW,
@@ -488,7 +489,7 @@ def run_get_batch(
         is the sampled input sequences, and the second tuple item is the corresponding
         language modeling labels.
     """
-    raise NotImplementedError
+    return get_batch(torch.from_numpy(dataset), batch_size, context_length, torch.device(device))
 
 
 def run_softmax(in_features: Float[Tensor, " ..."], dim: int) -> Float[Tensor, " ..."]:
